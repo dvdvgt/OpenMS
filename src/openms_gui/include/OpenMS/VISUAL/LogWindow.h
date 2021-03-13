@@ -70,9 +70,6 @@ namespace OpenMS
 
     /// appends text without adding linebreaks and shows the log-window
     void appendText(const QString& text);
-
-    /// appends a new block with @p heading and a @p body
-    void appendNewHeader(const LogState state, const String& heading, const String& body);
     
     /// appends a line break (same as append(""))
     void addNewline();
@@ -83,6 +80,10 @@ namespace OpenMS
     void setMaxLength(int max_length);
 
   signals:
+
+  public slots:
+    /// appends a new block with @p heading and a @p body
+    void appendNewHeader(const LogState state, const String& heading, const String& body);
 
   protected slots:
     /// if text length reached max_length_, then delete prefix until length of text is 1/2 of max_length_

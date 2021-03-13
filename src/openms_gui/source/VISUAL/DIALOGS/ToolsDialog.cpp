@@ -51,6 +51,7 @@
 #include <QtWidgets/QFileDialog>
 #include <QtWidgets/QCheckBox>
 #include <QProcess>
+#include <QCoreApplication>
 
 #include <OpenMS/ANALYSIS/MAPMATCHING/FeatureGroupingAlgorithm.h>
 #include <OpenMS/TRANSFORMATIONS/FEATUREFINDER/FeatureFinder.h>
@@ -60,6 +61,8 @@
 #include <OpenMS/DATASTRUCTURES/Param.h>
 #include <OpenMS/FORMAT/FileTypes.h>
 
+#include <future>
+
 using namespace std;
 
 namespace OpenMS
@@ -67,12 +70,14 @@ namespace OpenMS
 
   ToolsDialog::ToolsDialog(
           QWidget* parent,
+          LogWindow* log,
           String ini_file,
           String default_dir,
           LayerData::DataType layer_type,
           String layer_name
     ) :
     QDialog(parent),
+    log_(log),
     ini_file_(ini_file),
     default_dir_(default_dir)
   {
@@ -97,16 +102,41 @@ namespace OpenMS
             {FileTypes::Type::IDXML, LayerData::DataType::DT_IDENT}
     };
     // Get a map of all tools
-    const auto& tools = OpenMS::ToolHandler::getTOPPToolList();
-    for (const auto& tool : tools)
+    const auto& tools = ToolHandler::getTOPPToolList();
+    const auto& utils = ToolHandler::getUtilList();
+    // Extract all names
+    std::vector<String> keys;
+    std::vector<std::future<Param>> results;
+    qRegisterMetaType<LogWindow::LogState>("LogWindow::LogState"); // Make LogState queueable within a connection
+    connect(this, &ToolsDialog::logMessage, log, &LogWindow::appendNewHeader);
+    for (const auto& pair : tools)
     {
-      const String& tool_name = tool.first;
-      Param p = getParamFromIni_(tool_name);
-      std::vector<LayerData::DataType> tool_types = getTypesFromParam_(p);
-      // Check if tool is compatible with the layer type
-      if (std::find(tool_types.begin(), tool_types.end(), layer_type) != tool_types.end())
+      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
+    }
+    for (const auto& pair : utils)
+    {
+      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
+    }
+    for (auto& r : results)
+    {
+      while(r.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
       {
-        list << tool_name.toQString();
+        QCoreApplication::processEvents();
+      }
+    }
+    for (auto& r : results)
+    {
+      Param p = r.get();
+      if (!p.empty())
+      {
+        // Check whether tool/util is compatible with the current layer
+        std::vector<LayerData::DataType> tool_types = getTypesFromParam_(p);
+        if (std::find(tool_types.begin(), tool_types.end(), layer_type) != tool_types.end())
+        {
+          // Extract tool/util name
+          String name = p.begin().getName().substr(0, p.begin().getName().rfind(":"));
+          list << name.toQString();
+        }
       }
     }
 
@@ -169,27 +199,24 @@ namespace OpenMS
 
   }
 
-  Param ToolsDialog::getParamFromIni_(const String& tool_name)
+  Param ToolsDialog::getParamFromIni_(const String& name)
   {
-    QStringList args{ "-write_ini", ini_file_.toQString(), "-log", (ini_file_+".log").toQString() };
+    const String path = File::getUniqueName() + ".ini";
+    QStringList args{ "-write_ini", path.toQString()};
     QProcess qp;
-    String executable = File::findSiblingTOPPExecutable(tool_name);
+    Param tool_param;
+    String executable = File::findSiblingTOPPExecutable(name);
     qp.start(executable.toQString(), args);
     const bool success = qp.waitForFinished(-1); // wait till job is finished
-    if (qp.error() == QProcess::FailedToStart || success == false || qp.exitStatus() != 0 || qp.exitCode() != 0)
+    if (qp.error() == QProcess::FailedToStart || success == false || qp.exitStatus() != 0 || qp.exitCode() != 0 || !File::exists(path))
     {
-        QMessageBox::critical(this, "Error", (String("Could not execute '") + executable + "'!\n\nMake sure the TOPP tools are present in '" + File::getExecutablePath() + "',  that you have permission to write to the temporary file path, and that there is space left in the temporary file path.").c_str());
-        // TODO handle error
+      emit logMessage(LogWindow::LogState::WARNING, "Failed to load util/tool: ", name.toQString());
+      File::remove(path);
+      return tool_param;
     }
-    else if (!File::exists(ini_file_))
-    {
-        QMessageBox::critical(this, "Error", (String("Could find requested INI file '") + ini_file_ + "'!").c_str());
-        // TODO handle error
-    }
-    Param tool_param;
     ParamXMLFile paramFile;
-    paramFile.load((ini_file_).c_str(), tool_param);
-
+    paramFile.load((path).c_str(), tool_param);
+    File::remove(path);
     return tool_param;
   }
 

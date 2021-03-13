@@ -81,7 +81,7 @@ public:
         @param layer_type The type of data (determines the applicable tools)
         @param layer_name The name of the selected layer
     */
-    ToolsDialog(QWidget * parent, String ini_file, String default_dir, LayerData::DataType layer_type, String layer_name);
+    ToolsDialog(QWidget * parent, LogWindow * log, String ini_file, String default_dir, LayerData::DataType layer_type, String layer_name);
     ///Destructor
     ~ToolsDialog() override;
 
@@ -93,6 +93,8 @@ public:
     String getTool();
 
 private:
+    /// Point to LogWindow instance
+    LogWindow * log_;
     /// ParamEditor for reading ini-files
     ParamEditor * editor_;
     /// tools description label
@@ -125,11 +127,14 @@ private:
     ///Enables the ok button and input/output comboboxes
     void enable_();
     /// Generates an .ini file for a given tool name and loads it into a Param object.
-    Param getParamFromIni_(const String& tool_name);
+    Param getParamFromIni_(const String& name);
     /// Determine all types a tool is compatible with by mapping each file extensions in a tools param
     std::vector<LayerData::DataType> getTypesFromParam_(const Param& p) const;
     // Fill input_combo_ and output_combo_ box with the appropriate entries from the specified param object.
     void setInputOutputCombo_(const Param& p);
+
+signals:
+    void logMessage(const LogWindow::LogState level, const QString& header, const QString& body);
 
 protected slots:
 

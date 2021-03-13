@@ -76,6 +76,7 @@ public:
         @brief Constructor
 
         @param parent Qt parent widget
+        @param pointer to a LogWindow instance (e.g. ToppView's)
         @param ini_file The file name of the temporary INI file created by this dialog
         @param default_dir The default directory for loading and storing INI files
         @param layer_type The type of data (determines the applicable tools)
@@ -93,8 +94,6 @@ public:
     String getTool();
 
 private:
-    /// Point to LogWindow instance
-    LogWindow * log_;
     /// ParamEditor for reading ini-files
     ParamEditor * editor_;
     /// tools description label
@@ -132,12 +131,14 @@ private:
     std::vector<LayerData::DataType> getTypesFromParam_(const Param& p) const;
     // Fill input_combo_ and output_combo_ box with the appropriate entries from the specified param object.
     void setInputOutputCombo_(const Param& p);
+    /// Returns a list with all tools/utils compatible to the current layer type.
+    void addAllCompatibleTools(LayerData::DataType& layer_type);
 
 signals:
-    void logMessage(const LogWindow::LogState level, const QString& header, const QString& body);
+    /// Emitted when a logging message needs to be sent.
+    void logMessage(const LogWindow::LogState& importance, const QString& header, const QString& body);
 
 protected slots:
-
     /// if ok button pressed show the tool output in a new layer, a new window or standard output as messagebox
     void ok_();
     /// Slot that handles changing of the tool

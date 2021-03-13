@@ -77,7 +77,6 @@ namespace OpenMS
           String layer_name
     ) :
     QDialog(parent),
-    log_(log),
     ini_file_(ini_file),
     default_dir_(default_dir)
   {
@@ -91,7 +90,6 @@ namespace OpenMS
 
     auto label = new QLabel("TOPP tool:");
     main_grid->addWidget(label, 1, 0);
-    QStringList list;
 
     // Determine all available tools compatible with the layer_type
     tool_map_ = {
@@ -101,51 +99,13 @@ namespace OpenMS
             {FileTypes::Type::CONSENSUSXML, LayerData::DataType::DT_CONSENSUS},
             {FileTypes::Type::IDXML, LayerData::DataType::DT_IDENT}
     };
-    // Get a map of all tools
-    const auto& tools = ToolHandler::getTOPPToolList();
-    const auto& utils = ToolHandler::getUtilList();
-    // Extract all names
-    std::vector<String> keys;
-    std::vector<std::future<Param>> results;
-    qRegisterMetaType<LogWindow::LogState>("LogWindow::LogState"); // Make LogState queueable within a connection
+    // Make LogState queueable within a connection
+    qRegisterMetaType<LogWindow::LogState>("LogWindow::LogState");
     connect(this, &ToolsDialog::logMessage, log, &LogWindow::appendNewHeader);
-    for (const auto& pair : tools)
-    {
-      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
-    }
-    for (const auto& pair : utils)
-    {
-      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
-    }
-    for (auto& r : results)
-    {
-      while(r.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
-      {
-        QCoreApplication::processEvents();
-      }
-    }
-    for (auto& r : results)
-    {
-      Param p = r.get();
-      if (!p.empty())
-      {
-        // Check whether tool/util is compatible with the current layer
-        std::vector<LayerData::DataType> tool_types = getTypesFromParam_(p);
-        if (std::find(tool_types.begin(), tool_types.end(), layer_type) != tool_types.end())
-        {
-          // Extract tool/util name
-          String name = p.begin().getName().substr(0, p.begin().getName().rfind(":"));
-          list << name.toQString();
-        }
-      }
-    }
 
-    //sort list alphabetically
-    list.sort();
-    list.push_front("<select tool>");
     tools_combo_ = new QComboBox;
     tools_combo_->setMinimumWidth(150);
-    tools_combo_->addItems(list);
+    addAllCompatibleTools(layer_type);
     connect(tools_combo_, SIGNAL(activated(int)), this, SLOT(setTool_(int)));
 
     main_grid->addWidget(tools_combo_, 1, 1);
@@ -199,6 +159,49 @@ namespace OpenMS
 
   }
 
+  void ToolsDialog::addAllCompatibleTools(LayerData::DataType& layer_type)
+  {
+    // Get a map of all tools
+    const auto& tools = ToolHandler::getTOPPToolList();
+    const auto& utils = ToolHandler::getUtilList();
+    // Get param for each tool/util
+    std::vector<std::future<Param>> results;
+    for (const auto& pair : tools)
+    {
+      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
+    }
+    for (const auto& pair : utils)
+    {
+      results.push_back(std::move(std::async(std::launch::async, [&]() { return getParamFromIni_(pair.first); })));
+    }
+    for (auto& r : results)
+    {
+      while(r.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready)
+      {
+        QCoreApplication::processEvents();
+      }
+    }
+    QList<QString> l;
+    for (auto& r : results)
+    {
+      Param p = r.get();
+      if (!p.empty())
+      {
+        // Check whether tool/util is compatible with the current layer
+        std::vector<LayerData::DataType> tool_types = getTypesFromParam_(p);
+        if (std::find(tool_types.begin(), tool_types.end(), layer_type) != tool_types.end())
+        {
+          // Extract tool/util name
+          String name = p.begin().getName().substr(0, p.begin().getName().rfind(":"));
+          l << name.toQString();
+        }
+      }
+    }
+    l.sort();
+    l.push_front("<select tool>");
+    tools_combo_->addItems(l);
+  }
+
   Param ToolsDialog::getParamFromIni_(const String& name)
   {
     const String path = File::getUniqueName() + ".ini";
@@ -208,9 +211,9 @@ namespace OpenMS
     String executable = File::findSiblingTOPPExecutable(name);
     qp.start(executable.toQString(), args);
     const bool success = qp.waitForFinished(-1); // wait till job is finished
-    if (qp.error() == QProcess::FailedToStart || success == false || qp.exitStatus() != 0 || qp.exitCode() != 0 || !File::exists(path))
+    if (qp.error() == QProcess::FailedToStart || !success || qp.exitStatus() != 0 || qp.exitCode() != 0 || !File::exists(path))
     {
-      emit logMessage(LogWindow::LogState::WARNING, "Failed to load util/tool: ", name.toQString());
+      emit logMessage(LogWindow::LogState::WARNING, "Failed to load util/tool:", name.toQString());
       File::remove(path);
       return tool_param;
     }

@@ -181,7 +181,7 @@ namespace OpenMS
         QCoreApplication::processEvents();
       }
     }
-    QList<QString> l;
+    QList<QString> tool_names;
     for (auto& r : results)
     {
       Param p = r.get();
@@ -193,18 +193,18 @@ namespace OpenMS
         {
           // Extract tool/util name
           String name = p.begin().getName().substr(0, p.begin().getName().rfind(":"));
-          l << name.toQString();
+          tool_names << name.toQString();
         }
       }
     }
-    l.sort();
-    l.push_front("<select tool>");
-    tools_combo_->addItems(l);
+    tool_names.sort();
+    tool_names.push_front("<select tool>");
+    tools_combo_->addItems(tool_names);
   }
 
   Param ToolsDialog::getParamFromIni_(const String& name)
   {
-    const String path = File::getUniqueName() + ".ini";
+    String path = File::getUniqueName() + ".ini";
     QStringList args{ "-write_ini", path.toQString()};
     QProcess qp;
     Param tool_param;
@@ -214,12 +214,12 @@ namespace OpenMS
     if (qp.error() == QProcess::FailedToStart || !success || qp.exitStatus() != 0 || qp.exitCode() != 0 || !File::exists(path))
     {
       emit logMessage(LogWindow::LogState::WARNING, "Failed to load util/tool:", name.toQString());
-      File::remove(path);
+      std::remove(path.c_str());
       return tool_param;
     }
     ParamXMLFile paramFile;
     paramFile.load((path).c_str(), tool_param);
-    File::remove(path);
+    std::remove(path.c_str());
     return tool_param;
   }
 

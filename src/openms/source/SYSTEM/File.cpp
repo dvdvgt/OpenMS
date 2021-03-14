@@ -92,11 +92,10 @@ namespace OpenMS
   String File::getExecutablePath()
   {
     // see http://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe/1024937#1024937 for more OS' (if needed)
-    // Use immediately evaluated lambda to protect static variable from concurrent access thus making this function
-    // thread-safe.
+    // Use immediately evaluated lambda to protect static variable from concurrent access.
+    static bool path_checked = false;
     static String spath = [&]() -> String {
-        static bool path_checked = false;
-        String rpath;
+        String rpath = "";
 
         // short route. Only inquire the path once. The result will be the same every time.
         if (path_checked) return spath;
